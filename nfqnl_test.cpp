@@ -276,9 +276,11 @@ accepting:
 
 
 		n = recv(clientac, buffer, 2000, 0);
+		if(n<=0) return 0;
 		buffer[n] = '\0';
 		printf("/***************iqnqpquqtq*********\n");
-		printf("%s\n",buffer);	
+		//printf("%s\n",buffer);	
+		for(int i=0;i<n;i++) printf("%c",buffer[i]);printf("\n");
 		printf("***********************************/\n");
 		if(!print_host(&hostname,(u_char *)buffer, n) ) {
 			printf("cannot read host name\n");
@@ -335,7 +337,8 @@ accepting:
 			if(n<=0) break;
 			buffer[n] = '\0';
 			printf("/***************iqnqpquqtq*********\n");
-			printf("%s\n",buffer);	
+			//printf("%s\n",buffer);	
+			for(int i=0;i<n;i++) printf("%c",buffer[i]);printf("\n");
 			printf("***********************************/\n");
 			n = SSL_write(clissl, buffer, n);
 			printf("ssl_write complete\n");
@@ -346,27 +349,62 @@ accepting:
 		int totlen = 0x7fffffff;
 		int dellen = 0;
 		char *save = buffer;
+		int saven = n;
 		while(1) {
-			buffer = save;
 			if(totlen<=0) break;
 			memset(buffer,0,2005);
 			n = SSL_read(clissl, buffer, 2000);
+			save = buffer;
+			saven = n;
 			if(n<=0) break;
 			//if(n!=500) flag|=2;
 			buffer[n] = '\0';
 			printf("////////////////////////////////////\n");
 			printf("/*********oquqtqpquqtq**************\n");
-			printf("%s\n",buffer);	
+//			printf("%s\n",buffer);	
+			for(int i=0;i<n;i++) printf("%c",buffer[i]);printf("\n");
 			printf("***********************************/\n");
 			printf("////////////////////////////////////\n");
 
+			if(KMP(buffer, "Transfer-Encoding: chunked",strlen(buffer))) {
+				int pos = 0,data_len;
+				if((pos = KMP(buffer, "\r\n\r\n",strlen(buffer))) ==-1 ) {
+					printf("error: no chunked length data\n");
+					return 0;
+				}
+				buffer += pos+4;
+				n-= pos+4;
+				sscanf(buffer, "%x",&data_len);
+				int chunked_start = KMP(buffer, "\r\n", strlen(buffer));
+				chunked_start +=2;
+				while(data_len) {
+					if(data_len + 2 > n) {
+						int over_len = data_len +2 -n;
+						SSL_write(srvssl,save,saven);
+						n = SSL_read(clissl,buffer,2000);
+						save = buffer, saven = n;
+						buffer= buffer + over_len;
+						n-= over_len;
+					}
+					else {
+						buffer += data_len +2;
+						n-= data_len +2;
+					}
+					sscanf(buffer,"%x",&data_len);
+				}
+				SSL_write(srvssl,save,saven);
+				
+					
+			}
 			if(flag == 0) {
+				flag = 1;
 				int c_len = -1;
 				c_len = KMP(buffer, "Content-Length: ",strlen(buffer));
 				if(c_len == -1) c_len = KMP(buffer, "content-length: ",strlen(buffer));
+ 
 				if(c_len == -1) {
-					printf("couldn't found content-length\n");
-					n = SSL_write(srvssl,buffer,strlen(buffer));	
+					printf("error : couldn't found content-length\n");
+					n = SSL_write(srvssl,buffer,n);	
 					break;
 				}
 				sscanf(buffer+c_len+16,"%d",&totlen);
